@@ -1,2 +1,0 @@
-app_key = 'PSkFkbsu5VlxARDd7PQSKfQqN6A0kS8YxdFF'
-app_secret = 'S+Y07UVblSiujegJiC5ehERQHKAqd2CldMasNFErFL7eNlIbjEcF/jBuxZfP0A/wnSaYFJXIediklAv0ioTFx5Bx3AI64EqD2/JOitPTHeykBmoPbaQqlUUCEu3tJOM9iXhQbu9NoBXL+3sBQBd1eJbWLOGyZPOrd9eI7bR5xMWDz2Z6zNM='
