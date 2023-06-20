@@ -1,22 +1,17 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Apr 18 11:23:04 2022
-
-@author: KIS Developers
-"""
-
+import config
 import time, copy
 import yaml
 import requests
 import json
-
 import pandas as pd
-
 from collections import namedtuple
 from datetime import datetime
 
 with open(r'kisdev_vi.yaml', encoding='UTF-8') as f:
     _cfg = yaml.load(f, Loader=yaml.FullLoader)
+
+_cfg['my_app'] = config.my_app
+_cfg['my_sec'] = config.my_sec
 
 _TRENV = tuple()
 _last_auth_time = datetime.now()
@@ -28,33 +23,31 @@ _base_headers = {
     "Content-Type": "application/json",
     "Accept": "text/plain",
     "charset": "UTF-8",
-    'User-Agent': _cfg['my_agent']
+    'User-Agent': _cfg['my_agent'] 
 }
-
 
 def _getBaseHeader():
     if _autoReAuth: reAuth()
     return copy.deepcopy(_base_headers)
 
-
 def _setTRENV(cfg):
-    nt1 = namedtuple('KISEnv', ['my_app', 'my_sec', 'my_acct', 'my_prod', 'my_token', 'my_url'])
+    nt1 = namedtuple('KISEnv', ['my_app','my_sec','my_acct', 'my_prod', 'my_token', 'my_url'])
     d = {
         'my_app': cfg['my_app'],
         'my_sec': cfg['my_sec'],
         'my_acct': cfg['my_acct'],
         'my_prod': cfg['my_prod'],
         'my_token': cfg['my_token'],
-        'my_url': cfg['my_url']
+        'my_url' : cfg['my_url']
     }
-
-    global _TRENV
+    
+    global _TRENV 
     _TRENV = nt1(**d)
-
+    
 
 def isPaperTrading():
     return _isPaper
-
+    
 
 def changeTREnv(token_key, svr='prod', product='01'):
     cfg = dict()
@@ -68,33 +61,28 @@ def changeTREnv(token_key, svr='prod', product='01'):
         ak1 = 'paper_app'
         ak2 = 'paper_sec'
         _isPaper = True
-
+        
     cfg['my_app'] = _cfg[ak1]
-    cfg['my_sec'] = _cfg[ak2]
-
+    cfg['my_sec'] = _cfg[ak2]   
+    
     if svr == 'prod' and product == '01':
         cfg['my_acct'] = _cfg['my_acct_stock']
     elif svr == 'prod' and product == '03':
         cfg['my_acct'] = _cfg['my_acct_future']
-    elif svr == 'vps' and product == '01':
+    elif svr == 'vps' and product == '01':        
         cfg['my_acct'] = _cfg['my_paper_stock']
-    elif svr == 'vps' and product == '03':
+    elif svr == 'vps' and product == '03':        
         cfg['my_acct'] = _cfg['my_paper_future']
 
     cfg['my_prod'] = product
     cfg['my_token'] = token_key
-    cfg['my_url'] = _cfg[svr]
-
+    cfg['my_url'] = _cfg[svr] 
+    
     _setTRENV(cfg)
-
-
-def _getResultObject(json_data):
-    _tc_ = namedtuple('res', json_data.keys())
-
-    return _tc_(**json_data)
-
+    
 
 def auth(svr='prod', product='01'):
+    global _cfg
     p = {
         "grant_type": "client_credentials",
     }
@@ -105,9 +93,10 @@ def auth(svr='prod', product='01'):
     elif svr == 'vps':
         ak1 = 'paper_app'
         ak2 = 'paper_sec'
-
+        
     p["appkey"] = _cfg[ak1]
     p["appsecret"] = _cfg[ak2]
+    
 
     url = f'{_cfg[svr]}/oauth2/tokenP'
 
@@ -116,50 +105,75 @@ def auth(svr='prod', product='01'):
     if rescode == 200:
         my_token = _getResultObject(res.json()).access_token
     else:
-        print('Get Authentification token fail!\nYou have to restart your app!!!')
+        print('Get Authentification token fail!\nYou have to restart your app!!!')  
         return
-
+ 
     changeTREnv(f"Bearer {my_token}", svr, product)
-
+    
     _base_headers["authorization"] = _TRENV.my_token
     _base_headers["appkey"] = _TRENV.my_app
     _base_headers["appsecret"] = _TRENV.my_sec
-
+    
     global _last_auth_time
     _last_auth_time = datetime.now()
-
+    
     if (_DEBUG):
         print(f'[{_last_auth_time}] => get AUTH Key completed!')
-
-
-# end of initialize
-def reAuth(svr='prod', product='01'):
-    n2 = datetime.now()
-    if (n2 - _last_auth_time).seconds >= 86400:
-        auth(svr, product)
-
+    
 
 def getEnv():
     return _cfg
 
-
 def getTREnv():
     return _TRENV
 
+def _getResultObject(json_data):
+    _tc_ = namedtuple('res', json_data.keys())
 
-# 주문 API에서 사용할 hash key값을 받아 header에 설정해 주는 함수
-# Input: HTTP Header, HTTP post param
-# Output: None
-def set_order_hash_key(h, p):
-    url = f"{getTREnv().my_url}/uapi/hashkey"
+    return _tc_(**json_data)
 
-    res = requests.post(url, data=json.dumps(p), headers=h)
-    rescode = res.status_code
-    if rescode == 200:
-        h['hashkey'] = _getResultObject(res.json()).HASH
+
+
+def _url_fetch(api_url, ptr_id, params, appendHeaders=None, postFlag=False, hashFlag=True):
+    url = f"{getTREnv().my_url}{api_url}"
+
+    headers = _getBaseHeader()
+
+    # 추가 Header 설정
+    tr_id = ptr_id
+    if ptr_id[0] in ('T', 'J', 'C'):
+        if isPaperTrading():
+            tr_id = 'V' + ptr_id[1:]
+
+    headers["tr_id"] = tr_id
+    headers["custtype"] = "P"
+
+    if appendHeaders is not None:
+        if len(appendHeaders) > 0:
+            for x in appendHeaders.keys():
+                headers[x] = appendHeaders.get(x)
+
+    if (_DEBUG):
+        print("< Sending Info >")
+        print(f"URL: {url}, TR: {tr_id}")
+        print(f"<header>\n{headers}")
+        print(f"<body>\n{params}")
+
+    if (postFlag):
+        if (hashFlag): set_order_hash_key(headers, params)
+        res = requests.post(url, headers=headers, data=json.dumps(params))
     else:
-        print("Error:", rescode)
+        res = requests.get(url, headers=headers, params=params)
 
+    if res.status_code == 200:
+        ar = APIResp(res)
+        if (_DEBUG): ar.printAll()
+        return ar
+    else:
+        print("Error Code : " + str(res.status_code) + " | " + res.text)
+        return None
+
+    
 
 class APIResp:
     def __init__(self, resp):
@@ -225,54 +239,16 @@ class APIResp:
         print('-------------------------------')
 
     # end of class APIResp
+    
+    
 
+# end of initialize
+def reAuth(svr='prod', product='01'):
+    n2 = datetime.now()
+    if (n2 - _last_auth_time).seconds >= 86400:
+        auth(svr, product)
 
-########### API call wrapping
-
-def _url_fetch(api_url, ptr_id, params, appendHeaders=None, postFlag=False, hashFlag=True):
-    url = f"{getTREnv().my_url}{api_url}"
-
-    headers = _getBaseHeader()
-
-    # 추가 Header 설정
-    tr_id = ptr_id
-    if ptr_id[0] in ('T', 'J', 'C'):
-        if isPaperTrading():
-            tr_id = 'V' + ptr_id[1:]
-
-    headers["tr_id"] = tr_id
-    headers["custtype"] = "P"
-
-    if appendHeaders is not None:
-        if len(appendHeaders) > 0:
-            for x in appendHeaders.keys():
-                headers[x] = appendHeaders.get(x)
-
-    if (_DEBUG):
-        print("< Sending Info >")
-        print(f"URL: {url}, TR: {tr_id}")
-        print(f"<header>\n{headers}")
-        print(f"<body>\n{params}")
-
-    if (postFlag):
-        if (hashFlag): set_order_hash_key(headers, params)
-        res = requests.post(url, headers=headers, data=json.dumps(params))
-    else:
-        res = requests.get(url, headers=headers, params=params)
-
-    if res.status_code == 200:
-        ar = APIResp(res)
-        if (_DEBUG): ar.printAll()
-        return ar
-    else:
-        print("Error Code : " + str(res.status_code) + " | " + res.text)
-        return None
-
-
-# 계좌 잔고를 DataFrame 으로 반환
-# Input: None (Option) rtCashFlag=True 면 예수금 총액을 반환하게 된다
-# Output: DataFrame (Option) rtCashFlag=True 면 예수금 총액을 반환하게 된다
-
+        
 def get_acct_balance(rtCashFlag=False):
     url = '/uapi/domestic-stock/v1/trading/inquire-psbl-order'
     tr_id = "TTTC8434R"
@@ -296,7 +272,7 @@ def get_acct_balance(rtCashFlag=False):
         r2 = t1.getBody().output2
         return int(r2[0]['dnca_tot_amt'])
 
-    if t1.isOK():  # body 의 rt_cd 가 0 인 경우만 성공
+    if t1.isOK() and t1.getBody().output1:  # body 의 rt_cd 가 0 인 경우만 성공
         tdf = pd.DataFrame(t1.getBody().output1)
         tdf.set_index('pdno', inplace=True)
         cf1 = ['prdt_name', 'hldg_qty', 'ord_psbl_qty', 'pchs_avg_pric', 'evlu_pfls_rt', 'prpr', 'bfdy_cprs_icdc',
@@ -311,11 +287,14 @@ def get_acct_balance(rtCashFlag=False):
         t1.printError()
         return pd.DataFrame()
 
+    
+    
+    
 
 # 종목의 주식, ETF, 선물/옵션 등의 구분값을 반환. 현재는 무조건 주식(J)만 반환
 def _getStockDiv(stock_no):
     return 'J'
-
+    
 
 # 종목별 현재가를 dict 로 반환
 # Input: 종목코드
@@ -336,8 +315,8 @@ def get_current_price(stock_no):
         return t1.getBody().output
     else:
         t1.printError()
-        return dict()
-
+        return dict()    
+    
 
 # 주문 base function
 # Input: 종목코드, 주문수량, 주문가격, Buy Flag(If True, it's Buy order), order_type="00"(지정가)
@@ -370,7 +349,7 @@ def do_order(stock_code, order_qty, order_price, prd_code="01", buy_flag=True, o
     else:
         t1.printError()
         return None
-
+    
 
 # 사자 주문. 내부적으로는 do_order 를 호출한다.
 # Input: 종목코드, 주문수량, 주문가격
@@ -379,6 +358,7 @@ def do_order(stock_code, order_qty, order_price, prd_code="01", buy_flag=True, o
 def do_sell(stock_code, order_qty, order_price, prd_code="01", order_type="00"):
     t1 = do_order(stock_code, order_qty, order_price, buy_flag=False, order_type=order_type)
     return t1.isOK()
+    
 
 
 # 팔자 주문. 내부적으로는 do_order 를 호출한다.
@@ -422,7 +402,8 @@ def get_orders(prd_code='01'):
     else:
         t1.printError()
         return pd.DataFrame()
-
+    
+    
 
 # 특정 주문 취소(01)/정정(02)
 # Input: 주문 번호(get_orders 를 호출하여 얻은 DataFrame 의 index  column 값이 취소 가능한 주문번호임)
@@ -453,7 +434,7 @@ def _do_cancel_revise(order_no, order_branch, order_qty, order_price, prd_code, 
     else:
         t1.printError()
         return None
-
+    
 
 # 특정 주문 취소
 #
@@ -467,6 +448,8 @@ def do_cancel(order_no, order_qty, order_price="01", order_branch='06010', prd_c
 def do_revise(order_no, order_qty, order_price, order_branch='06010', prd_code='01', order_dv='00', cncl_dv='01',
               qty_all_yn="Y"):
     return _do_cancel_revise(order_no, order_branch, order_qty, order_price, prd_code, order_dv, cncl_dv, qty_all_yn)
+
+
 
 
 # 모든 주문 취소
@@ -533,7 +516,8 @@ def get_my_complete(sdt, edt=None, prd_code='01', zipFlag=True):
     else:
         t1.printError()
         return pd.DataFrame()
-
+    
+    
 
 # 매수 가능(현금) 조회
 # Input: None
@@ -583,7 +567,9 @@ def get_stock_completed(stock_no):
         return pd.DataFrame(t1.getBody().output)
     else:
         t1.printError()
-        return pd.DataFrame()
+        return pd.DataFrame()    
+    
+    
 
 
 # 종목별 history data (현재 기준 30개만 조회 가능)
@@ -677,4 +663,125 @@ def get_stock_investor(stock_no):
         return hdf1
     else:
         t1.printError()
-        return pd.DataFrame()
+        return pd.DataFrame()    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+# kospi / kosdaq 종목코드 및 종목명 리턴 함수
+def get_code_name(name) :
+    if  name == 'kospi' : 
+        kospi = pd.read_table('kospi_code_mst.csv', sep= ',')
+        cols = ['단축코드', '한글명','그룹코드']
+        kospi = kospi[cols]
+        kospi = kospi[kospi['그룹코드'] =='ST']
+        kospi = kospi.iloc[:, :2]
+        code_to_name = {}
+        name_to_code = {}
+        for k in kospi.values : 
+            code_to_name[k[0]] = k[1]
+            name_to_code[k[1]] = k[0]
+    else : 
+        kosdaq = pd.read_table('kosdaq_code_mst.csv', sep= ',')
+        cols = ['단축코드', '한글종목명','증권그룹구분코드']
+        kosdaq = kosdaq[cols]
+        kosdaq = kosdaq[kosdaq['증권그룹구분코드'] =='ST']
+        kosdaq = kosdaq.iloc[:, :2]
+        code_to_name = {}
+        name_to_code = {}
+        for k in kosdaq.values : 
+            code_to_name[k[0]] = k[1]
+            name_to_code[k[1]] = k[0]
+            
+    return code_to_name, name_to_code
+
+
+    
+"""
+DB 연계 함수 
+"""
+import pymysql
+
+
+
+
+
+def sql_insert(sql) :
+    global ip, password
+    conn = pymysql.connect(host=ip,
+                       user='root',
+                       password=password,
+                       charset='utf8',
+                       database='uprising',
+                       port=3306)
+
+    cur = conn.cursor()
+    cur.execute(sql)
+    conn.commit()
+    #종료
+    conn.close()
+    return print(f'insert {sql} DONE') 
+
+
+
+def sql_select(sql) :
+    global ip, password
+    conn = pymysql.connect(host=ip,
+                       user='root',
+                       password=password,
+                       charset='utf8',
+                       database='uprising',
+                       port=3306)
+
+    cur = conn.cursor()
+    #sql = "select * from employees"
+    cur.execute(sql)
+    print(f'sql {sql} DONE') 
+    result = cur.fetchall()
+    conn.commit()
+    #종료
+    conn.close()
+    return result
+
+
+def sql_upate(sql) :
+    global ip, password
+    conn = pymysql.connect(host=ip,
+                       user='root',
+                       password=password,
+                       charset='utf8',
+                       database='uprising',
+                       port=3306)
+
+    cur = conn.cursor()
+    cur.execute(sql)
+    conn.commit()
+    #종료
+    conn.close()
+    return print(f'update {sql} DONE') 
+
+
+
+def sql_delete(sql) :
+    global ip, password
+    conn = pymysql.connect(host=ip,
+                       user='root',
+                       password=password,
+                       charset='utf8',
+                       database='uprising',
+                       port=3306)
+
+    cur = conn.cursor()
+    cur.execute(sql)
+    conn.commit()
+    #종료
+    conn.close()
+    return print(f'delete {sql} DONE') 
