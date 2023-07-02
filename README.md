@@ -34,3 +34,15 @@ get_stock_investor : 투자자별 매매 동향
 
 
 
+***
+
+##### **To do Lists** 
+
+````
+- DB engineering
+- strategy
+
+````
+
+
+
