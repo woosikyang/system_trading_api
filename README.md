@@ -2,9 +2,15 @@
 
 
 
+
+### API 파라미터 참고 문서
+https://apiportal.koreainvestment.com/apiservice/apiservice-domestic-stock-quotations#L_07802512-4f49-4486-91b4-1050b6f5dc9d
+
+
 #####Function Lists 
 
 --
+
 _getStockDiv : 종목의 주식, ETF, 선물/옵션 등의 구분값을 반환
 get_current_price : 종목별 현재가를 dict 로 반환
 do_order : 주문 base function
@@ -23,9 +29,10 @@ get_stock_history_by_ohlcv : 종목별 history data 를 표준 OHLCV DataFrame �
 get_stock_investor : 투자자별 매매 동향
 
 
-
-
-
-
-
 --
+
+
+
+
+
+

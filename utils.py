@@ -6,6 +6,12 @@ import json
 import pandas as pd
 from collections import namedtuple
 from datetime import datetime
+import pymysql
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+from base64 import b64decode
+
+
 
 with open(r'kisdev_vi.yaml', encoding='UTF-8') as f:
     _cfg = yaml.load(f, Loader=yaml.FullLoader)
@@ -173,7 +179,60 @@ def _url_fetch(api_url, ptr_id, params, appendHeaders=None, postFlag=False, hash
         print("Error Code : " + str(res.status_code) + " | " + res.text)
         return None
 
-    
+def url_fetch(api_url, ptr_id, params, appendHeaders=None, postFlag=False, hashFlag=True):
+    url = f"{getTREnv().my_url}{api_url}"
+
+    headers = _getBaseHeader()
+
+    # 추가 Header 설정
+    tr_id = ptr_id
+    if ptr_id[0] in ('T', 'J', 'C'):
+        if isPaperTrading():
+            tr_id = 'V' + ptr_id[1:]
+
+    headers["tr_id"] = tr_id
+    headers["custtype"] = "P"
+
+    if appendHeaders is not None:
+        if len(appendHeaders) > 0:
+            for x in appendHeaders.keys():
+                headers[x] = appendHeaders.get(x)
+
+    if (_DEBUG):
+        print("< Sending Info >")
+        print(f"URL: {url}, TR: {tr_id}")
+        print(f"<header>\n{headers}")
+        print(f"<body>\n{params}")
+
+    if (postFlag):
+        if (hashFlag): set_order_hash_key(headers, params)
+        res = requests.post(url, headers=headers, data=json.dumps(params))
+    else:
+        res = requests.get(url, headers=headers, params=params)
+
+    if res.status_code == 200:
+        ar = APIResp(res)
+        if (_DEBUG): ar.printAll()
+        return ar
+    else:
+        print("Error Code : " + str(res.status_code) + " | " + res.text)
+        return None
+
+
+#주문 API에서 사용할 hash key값을 받아 header에 설정해 주는 함수
+# Input: HTTP Header, HTTP post param
+# Output: None
+def set_order_hash_key(h, p):
+   
+    url = f"{getTREnv().my_url}/uapi/hashkey"
+  
+    res = requests.post(url, data=json.dumps(p), headers=h)
+    rescode = res.status_code
+    if rescode == 200:
+        h['hashkey'] = _getResultObject(res.json()).HASH
+    else:
+        print("Error:", rescode)
+
 
 class APIResp:
     def __init__(self, resp):
@@ -351,7 +410,7 @@ def do_order(stock_code, order_qty, order_price, prd_code="01", buy_flag=True, o
         return None
     
 
-# 사자 주문. 내부적으로는 do_order 를 호출한다.
+# 팔자 주문. 내부적으로는 do_order 를 호출한다.
 # Input: 종목코드, 주문수량, 주문가격
 # Output: True, False
 
@@ -361,7 +420,7 @@ def do_sell(stock_code, order_qty, order_price, prd_code="01", order_type="00"):
     
 
 
-# 팔자 주문. 내부적으로는 do_order 를 호출한다.
+# 사자 주문. 내부적으로는 do_order 를 호출한다.
 # Input: 종목코드, 주문수량, 주문가격
 # Output: True, False
 
@@ -389,7 +448,7 @@ def get_orders(prd_code='01'):
     }
 
     t1 = _url_fetch(url, tr_id, params)
-    if t1.isOK():
+    if t1.isOK() and len(t1.getBody().output) >= 1:
         tdf = pd.DataFrame(t1.getBody().output)
         tdf.set_index('odno', inplace=True)
         cf1 = ['pdno', 'ord_qty', 'ord_unpr', 'ord_tmd', 'ord_gno_brno', 'orgn_odno']
@@ -666,7 +725,119 @@ def get_stock_investor(stock_no):
         return pd.DataFrame()    
     
     
+
+# AES256 DECODE
+def aes_cbc_base64_dec(key, iv, cipher_text):
+    """
+    :param key:  str type AES256 secret key value
+    :param iv: str type AES256 Initialize Vector
+    :param cipher_text: Base64 encoded AES256 str
+    :return: Base64-AES256 decodec str
+    """
+    cipher = AES.new(key.encode('utf-8'), AES.MODE_CBC, iv.encode('utf-8'))
+    return bytes.decode(unpad(cipher.decrypt(b64decode(cipher_text)), AES.block_size))
+
+
+# 웹소켓 접속키 발급
+def get_approval(key, secret):
     
+    # url = https://openapivts.koreainvestment.com:29443' # 모의투자계좌     
+    url = 'https://openapi.koreainvestment.com:9443' # 실전투자계좌
+    headers = {"content-type": "application/json"}
+    body = {"grant_type": "client_credentials",
+            "appkey": key,
+            "secretkey": secret}
+    PATH = "oauth2/Approval"
+    URL = f"{url}/{PATH}"
+    res = requests.post(URL, headers=headers, data=json.dumps(body))
+    approval_key = res.json()["approval_key"]
+    return approval_key
+
+
+# 주식체결 출력라이브러리
+def stockhoka(data):
+    """ 넘겨받는데이터가 정상인지 확인
+    print("stockhoka[%s]"%(data))
+    """
+    recvvalue = data.split('^')  # 수신데이터를 split '^'
+
+    print("유가증권 단축 종목코드 [" + recvvalue[0] + "]")
+    print("영업시간 [" + recvvalue[1] + "]" + "시간구분코드 [" + recvvalue[2] + "]")
+    print("======================================")
+    print("매도호가10 [%s]    잔량10 [%s]" % (recvvalue[12], recvvalue[32]))
+    print("매도호가09 [%s]    잔량09 [%s]" % (recvvalue[11], recvvalue[31]))
+    print("매도호가08 [%s]    잔량08 [%s]" % (recvvalue[10], recvvalue[30]))
+    print("매도호가07 [%s]    잔량07 [%s]" % (recvvalue[9], recvvalue[29]))
+    print("매도호가06 [%s]    잔량06 [%s]" % (recvvalue[8], recvvalue[28]))
+    print("매도호가05 [%s]    잔량05 [%s]" % (recvvalue[7], recvvalue[27]))
+    print("매도호가04 [%s]    잔량04 [%s]" % (recvvalue[6], recvvalue[26]))
+    print("매도호가03 [%s]    잔량03 [%s]" % (recvvalue[5], recvvalue[25]))
+    print("매도호가02 [%s]    잔량02 [%s]" % (recvvalue[4], recvvalue[24]))
+    print("매도호가01 [%s]    잔량01 [%s]" % (recvvalue[3], recvvalue[23]))
+    print("--------------------------------------")
+    print("매수호가01 [%s]    잔량01 [%s]" % (recvvalue[13], recvvalue[33]))
+    print("매수호가02 [%s]    잔량02 [%s]" % (recvvalue[14], recvvalue[34]))
+    print("매수호가03 [%s]    잔량03 [%s]" % (recvvalue[15], recvvalue[35]))
+    print("매수호가04 [%s]    잔량04 [%s]" % (recvvalue[16], recvvalue[36]))
+    print("매수호가05 [%s]    잔량05 [%s]" % (recvvalue[17], recvvalue[37]))
+    print("매수호가06 [%s]    잔량06 [%s]" % (recvvalue[18], recvvalue[38]))
+    print("매수호가07 [%s]    잔량07 [%s]" % (recvvalue[19], recvvalue[39]))
+    print("매수호가08 [%s]    잔량08 [%s]" % (recvvalue[20], recvvalue[40]))
+    print("매수호가09 [%s]    잔량09 [%s]" % (recvvalue[21], recvvalue[41]))
+    print("매수호가10 [%s]    잔량10 [%s]" % (recvvalue[22], recvvalue[42]))
+    print("======================================")
+    print("총매도호가 잔량        [%s]" % (recvvalue[43]))
+    print("총매도호가 잔량 증감   [%s]" % (recvvalue[54]))
+    print("총매수호가 잔량        [%s]" % (recvvalue[44]))
+    print("총매수호가 잔량 증감   [%s]" % (recvvalue[55]))
+    print("시간외 총매도호가 잔량 [%s]" % (recvvalue[45]))
+    print("시간외 총매수호가 증감 [%s]" % (recvvalue[46]))
+    print("시간외 총매도호가 잔량 [%s]" % (recvvalue[56]))
+    print("시간외 총매수호가 증감 [%s]" % (recvvalue[57]))
+    print("예상 체결가            [%s]" % (recvvalue[47]))
+    print("예상 체결량            [%s]" % (recvvalue[48]))
+    print("예상 거래량            [%s]" % (recvvalue[49]))
+    print("예상체결 대비          [%s]" % (recvvalue[50]))
+    print("부호                   [%s]" % (recvvalue[51]))
+    print("예상체결 전일대비율    [%s]" % (recvvalue[52]))
+    print("누적거래량             [%s]" % (recvvalue[53]))
+    print("주식매매 구분코드      [%s]" % (recvvalue[58]))
+
+
+
+# 주식체결처리 출력라이브러리
+def stockspurchase(data_cnt, data):
+    print("============================================")
+    menulist = "유가증권단축종목코드|주식체결시간|주식현재가|전일대비부호|전일대비|전일대비율|가중평균주식가격|주식시가|주식최고가|주식최저가|매도호가1|매수호가1|체결거래량|누적거래량|누적거래대금|매도체결건수|매수체결건수|순매수체결건수|체결강도|총매도수량|총매수수량|체결구분|매수비율|전일거래량대비등락율|시가시간|시가대비구분|시가대비|최고가시간|고가대비구분|고가대비|최저가시간|저가대비구분|저가대비|영업일자|신장운영구분코드|거래정지여부|매도호가잔량|매수호가잔량|총매도호가잔량|총매수호가잔량|거래량회전율|전일동시간누적거래량|전일동시간누적거래량비율|시간구분코드|임의종료구분코드|정적VI발동기준가"
+    menustr = menulist.split('|')
+    pValue = data.split('^')
+    i = 0
+    for cnt in range(data_cnt):  # 넘겨받은 체결데이터 개수만큼 print 한다
+        print("### [%d / %d]" % (cnt + 1, data_cnt))
+        for menu in menustr:
+            print("%-13s[%s]" % (menu, pValue[i]))
+            i += 1
+
+
+
+# 주식체결통보 출력라이브러리
+def stocksigningnotice(data, key, iv):
+    menulist = "고객ID|계좌번호|주문번호|원주문번호|매도매수구분|정정구분|주문종류|주문조건|주식단축종목코드|체결수량|체결단가|주식체결시간|거부여부|체결여부|접수여부|지점번호|주문수량|계좌명|체결종목명|신용구분|신용대출일자|체결종목명40|주문가격"
+    menustr1 = menulist.split('|')
+
+    # AES256 처리 단계
+    aes_dec_str = aes_cbc_base64_dec(key, iv, data)
+    pValue = aes_dec_str.split('^')
+
+    if pValue[12] == '2': # 체결통보
+        print("#### 국내주식 체결 통보 ####")
+    else:
+        print("#### 국내주식 주문·정정·취소·거부 접수 통보 ####")
+    
+    i = 0
+    for menu in menustr1:
+        print("%s  [%s]" % (menu, pValue[i]))
+        i += 1
     
     
     
@@ -704,84 +875,33 @@ def get_code_name(name) :
     return code_to_name, name_to_code
 
 
+
+
+
     
-"""
-DB 연계 함수 
-"""
-import pymysql
-
-
-
-
-
-def sql_insert(sql) :
-    global ip, password
-    conn = pymysql.connect(host=ip,
-                       user='root',
-                       password=password,
+#DB 연계 함수 
+def execute_sql(sql, values) :
+    # global ip, password
+    conn = pymysql.connect(host=config.ip,
+                       user=config.user,
+                       password=config.password,
                        charset='utf8',
-                       database='uprising',
-                       port=3306)
+                       database= config.database,
+                       port=config.port_num)
 
     cur = conn.cursor()
-    cur.execute(sql)
-    conn.commit()
-    #종료
-    conn.close()
-    return print(f'insert {sql} DONE') 
-
-
-
-def sql_select(sql) :
-    global ip, password
-    conn = pymysql.connect(host=ip,
-                       user='root',
-                       password=password,
-                       charset='utf8',
-                       database='uprising',
-                       port=3306)
-
-    cur = conn.cursor()
-    #sql = "select * from employees"
-    cur.execute(sql)
-    print(f'sql {sql} DONE') 
-    result = cur.fetchall()
-    conn.commit()
-    #종료
-    conn.close()
-    return result
-
-
-def sql_upate(sql) :
-    global ip, password
-    conn = pymysql.connect(host=ip,
-                       user='root',
-                       password=password,
-                       charset='utf8',
-                       database='uprising',
-                       port=3306)
-
-    cur = conn.cursor()
-    cur.execute(sql)
-    conn.commit()
-    #종료
-    conn.close()
-    return print(f'update {sql} DONE') 
-
-
-
-def sql_delete(sql) :
-    global ip, password
-    conn = pymysql.connect(host=ip,
-                       user='root',
-                       password=password,
-                       charset='utf8',
-                       database='uprising',
-                       port=3306)
-
-    cur = conn.cursor()
-    cur.execute(sql)
-    conn.commit()
-    #종료
-    conn.close()
-    return print(f'delete {sql} DONE') 
+    if ('select' in sql) or ('SELECT' in sql) : 
+        cur.execute(sql)
+        result = cur.fetchall()
+        conn.commit()
+        conn.close()
+        return result
+    elif ('insert' in sql) or ('INSERT' in sql) : 
+        cur.executemany(sql, values)
+        conn.commit()
+        conn.close()
+    else : 
+        cur.execute(sql)
+        conn.commit()
+        conn.close()
+    return print(f'||{sql}|| DONE') 
