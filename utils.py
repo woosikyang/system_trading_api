@@ -880,7 +880,7 @@ def get_code_name(name) :
 
     
 #DB 연계 함수 
-def execute_sql(sql, values) :
+def execute_sql(sql, values=None) :
     # global ip, password
     conn = pymysql.connect(host=config.ip,
                        user=config.user,
