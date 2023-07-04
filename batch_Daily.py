@@ -98,7 +98,7 @@ def daily_stock_price_yf(st_date=None, end_date=None) :
     kospi_code = list(name_to_code.values())
     kosdaq_code = list(name_to_code2.values())
     not_done = []
-    for k_ in tqdm(kospi_code + kosdaq_code) :
+    for k_ in tqdm(kospi_code) :
         if st_date and end_date :
             data = pdr.get_data_yahoo(f"{k_}.KS", st_date, end_date)
         else :
@@ -116,6 +116,30 @@ def daily_stock_price_yf(st_date=None, end_date=None) :
         except pymysql.err.DataError :
             not_done.append(k_)
             print(f"{k_} NOT DONE")
-            pd.DataFrame(not_done).to_csv(f'not_done_{bse_date}.txt')
+
+    print('KOSPI DONE')
+
+    for k_ in tqdm(kosdaq_code):
+        if st_date and end_date:
+            data = pdr.get_data_yahoo(f"{k_}.KQ", st_date, end_date)
+        else:
+            data = pdr.get_data_yahoo(f"{k_}.KQ")
+        data = data.reset_index()
+        data['Date'] = data['Date'].astype('str')
+        data['Date'] = data['Date'].str.replace('-', '')
+        tmp = [tuple([k_] + list(k)) for k in data.values]
+        # print(tmp[:10])
+        sql = stock_price_sql
+        try:
+            execute_sql(sql, tmp)
+            print(f"{k_} DONE")
+
+        except pymysql.err.DataError:
+            not_done.append(k_)
+            print(f"{k_} NOT DONE")
+
+    print('KOSDAQ DONE')
+
+    pd.DataFrame(not_done).to_csv(f'not_done_{bse_date}.txt')
 
 daily_stock_price_yf()
