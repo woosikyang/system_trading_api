@@ -13,7 +13,7 @@ from pandas_datareader import data as pdr
 import yfinance as yf
 from tqdm import tqdm
 
-bse_date = '20230704'
+bse_date = '20230705'
 
 auth(svr='prod', product='01')
 
@@ -142,4 +142,8 @@ def daily_stock_price_yf(st_date=None, end_date=None) :
 
     pd.DataFrame(not_done).to_csv(f'not_done_{bse_date}.txt')
 
-daily_stock_price_yf()
+
+
+
+daily_foreign(bse_date)
+daily_stock_price_yf(st_date='2023-07-05', end_date='2023-07-06')

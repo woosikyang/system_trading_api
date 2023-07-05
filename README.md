@@ -9,6 +9,19 @@ https://apiportal.koreainvestment.com/apiservice/apiservice-domestic-stock-quota
 
 ***
 
+##### **To do Lists** 
+
+````
+- DB engineering
+- strategy
+
+````
+
+
+
+
+***
+
 ##### **Function Lists** 
 
 ````
@@ -36,11 +49,13 @@ get_stock_investor : 투자자별 매매 동향
 
 ***
 
-##### **To do Lists** 
+##### **Batch Lists** 
 
 ````
-- DB engineering
-- strategy
+
+- daily_foreign(bse_date) : 당일자 상위 기관 매수/매도 종목  
+- daily_stock_price_yf(st_date='2023-07-05', end_date='2023-07-06') : 일자 기준 주식거래정보
+
 
 ````
 
