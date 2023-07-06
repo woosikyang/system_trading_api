@@ -13,7 +13,7 @@ from pandas_datareader import data as pdr
 import yfinance as yf
 from tqdm import tqdm
 
-bse_date = '20230705'
+bse_date = '20230706'
 
 auth(svr='prod', product='01')
 
@@ -92,6 +92,14 @@ def stock_price_range(stock_cd, data_type, st_date, end_date) :
 
 
 def daily_stock_price_yf(st_date=None, end_date=None) :
+    '''
+
+    일단위로 하려 했으나 데이터가 없는 경우가 있어 시간텀을 연구중
+
+    :param st_date: 조회시작일자
+    :param end_date: 조회종료일자
+    :return:
+    '''
     global name_to_code, name_to_code2, bse_date
     yf.pdr_override()
 
@@ -144,6 +152,7 @@ def daily_stock_price_yf(st_date=None, end_date=None) :
 
 
 
-
 daily_foreign(bse_date)
 daily_stock_price_yf(st_date='2023-07-05', end_date='2023-07-06')
+
+
