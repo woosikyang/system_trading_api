@@ -4,3 +4,5 @@ total_sample.ipynb
 DB_DDL.py
 strategy.py
 utils_sql.py
+data/
+
